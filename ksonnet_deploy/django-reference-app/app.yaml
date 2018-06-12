@@ -7,7 +7,7 @@ environments:
     k8sVersion: v1.9.0
     path: default
 kind: ksonnet.io/app
-name: django_reference_app
+name: django-reference-app
 registries:
   incubator:
     gitVersion:
