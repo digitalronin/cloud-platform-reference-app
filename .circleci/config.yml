@@ -32,10 +32,19 @@ references:
         docker tag app "${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1}"
         docker push "${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}:${CIRCLE_SHA1}"
 
-        if [ "${CIRCLE_BRANCH}" == "master" ]; then
+        if [ "${CIRCLE_BRANCH}" == "feature/multi-pipeline" ]; then
           docker tag app "${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}:latest"
           docker push "${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}:latest"
         fi
+
+  authenticate_with_cluster: &auth_to_cluster
+    run:
+      name: Authenticate against Kubernetes cluster
+      command: |
+        echo -n ${KUBE_ENV_PRODUCTION_CACERT} | base64 -d > ./ca.crt
+        kubectl config set-cluster ${KUBE_ENV_CLUSTER_NAME} --certificate-authority=./ca.crt --server=https://api.${KUBE_ENV_CLUSTER_NAME}
+        kubectl config set-credentials circleci --token=${KUBE_ENV_PRODUCTION_TOKEN
+        kubectl config use-context ${KUBE_ENV_CLUSTER_NAME}
 
 jobs:
   build:
@@ -51,13 +60,10 @@ jobs:
     <<: *container_config
     steps:
       - checkout
+      - *auth_to_cluster
       - run:
-          name: Kubectl auth and setup
+          name: Kubectl setup
           command: |
-            echo -n ${KUBE_ENV_PRODUCTION_CACERT} | base64 -d > ./ca.crt
-            kubectl config set-cluster ${KUBE_ENV_CLUSTER_NAME} --certificate-authority=./ca.crt --server=https://api.${KUBE_ENV_CLUSTER_NAME}
-            kubectl config set-credentials circleci --token=${KUBE_ENV_PRODUCTION_TOKEN
-            kubectl config use-context ${KUBE_ENV_CLUSTER_NAME}
             kubectl config set-context ${KUBE_ENV_CLUSTER_NAME} --cluster=${KUBE_ENV_CLUSTER_NAME} --user=circleci --namespace=${KUBE_ENV_STAGING_NAMESPACE}
             kubectl get pods
             helm init --tiller-namespace ${KUBE_ENV_STAGING_NAMESPACE} --client-only
@@ -76,28 +82,28 @@ jobs:
                           --debug
             kubectl get pods --show-all
 
-  # production_deploy:
-  #   <<: *container_config
-  #   steps:
-  #     - checkout
-  #     - *auth_to_cluster
-  #     - run:
-  #         name: Kubectl setup
-  #         command: |
-  #           kubectl config set-context ${KUBE_ENV_CLUSTER_NAME} --cluster=${KUBE_ENV_CLUSTER_NAME} --user=circleci --namespace=${KUBE_ENV_PRODUCTION_NAMESPACE}
-  #           kubectl get pods
-  #           helm init --tiller-namespace ${KUBE_ENV_PRODUCTION_NAMESPACE} --client-only
-  #           helm list --tiller-namespace ${KUBE_ENV_PRODUCTION_NAMESPACE}
-  #     - deploy:
-  #         name: Helm deployment
-  #         command: |
-  #           helm upgrade ${APPLICATON_DEPLOY_NAME} ./helm_deploy/django-app/. \
-  #                         --install \
-  #                         --tiller-namespace=${KUBE_ENV_PRODUCTION_NAMESPACE} \
-  #                         --namespace=${KUBE_ENV_PRODUCTION_NAMESPACE} \
-  #                         --set image.repository="${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}" \
-  #                         --set image.tag="${CIRCLE_SHA1}" \
-  #                         --set deploy.host="${KUBE_ENV_PROD_URL}" \
-  #                         --set replicaCount="2" \
-  #                         --debug
-  #           kubectl get pods --show-all
+  production_deploy:
+    <<: *container_config
+    steps:
+      - checkout
+      - *auth_to_cluster
+      - run:
+          name: Kubectl setup
+          command: |
+            kubectl config set-context ${KUBE_ENV_CLUSTER_NAME} --cluster=${KUBE_ENV_CLUSTER_NAME} --user=circleci --namespace=${KUBE_ENV_PRODUCTION_NAMESPACE}
+            kubectl get pods
+            helm init --tiller-namespace ${KUBE_ENV_PRODUCTION_NAMESPACE} --client-only
+            helm list --tiller-namespace ${KUBE_ENV_PRODUCTION_NAMESPACE}
+      - deploy:
+          name: Helm deployment
+          command: |
+            helm upgrade ${APPLICATON_DEPLOY_NAME} ./helm_deploy/django-app/. \
+                          --install \
+                          --tiller-namespace=${KUBE_ENV_PRODUCTION_NAMESPACE} \
+                          --namespace=${KUBE_ENV_PRODUCTION_NAMESPACE} \
+                          --set image.repository="${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}" \
+                          --set image.tag="${CIRCLE_SHA1}" \
+                          --set deploy.host="${KUBE_ENV_PROD_URL}" \
+                          --set replicaCount="2" \
+                          --debug
+            kubectl get pods --show-all
