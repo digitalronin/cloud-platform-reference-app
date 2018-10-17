@@ -44,7 +44,7 @@ references:
         echo -n ${KUBE_ENV_PRODUCTION_CACERT} | base64 -d > ./ca.crt
         kubectl config set-cluster ${KUBE_ENV_CLUSTER_NAME} --certificate-authority=./ca.crt --server=https://api.${KUBE_ENV_CLUSTER_NAME}
         kubectl config set-credentials circleci --token=${KUBE_ENV_PRODUCTION_TOKEN}
-        kubectl config use-context ${KUBE_ENV_CLUSTER_NAME}
+        kubectl config get-contexts
 
 jobs:
   build:
