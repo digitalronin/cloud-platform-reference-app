@@ -37,15 +37,6 @@ references:
           docker push "${ECR_ENDPOINT}/${GITHUB_TEAM_NAME_SLUG}/${CIRCLE_PROJECT_REPONAME}:latest"
         fi
 
-  authenticate_with_cluster: &auth_to_cluster
-    run:
-      name: Authenticate against Kubernetes cluster
-      command: |
-        echo -n ${KUBE_ENV_PRODUCTION_CACERT} | base64 -d > ./ca.crt
-        kubectl config set-cluster ${KUBE_ENV_CLUSTER_NAME} --certificate-authority=./ca.crt --server=https://api.${KUBE_ENV_CLUSTER_NAME}
-        kubectl config set-credentials circleci --token=${KUBE_ENV_PRODUCTION_TOKEN
-        kubectl config use-context ${KUBE_ENV_CLUSTER_NAME}
-
 jobs:
   build:
     <<: *container_config
@@ -60,10 +51,13 @@ jobs:
     <<: *container_config
     steps:
       - checkout
-      - *auth_to_cluster
       - run:
-          name: Kubectl setup
+          name: Kubectl auth and setup
           command: |
+            echo -n ${KUBE_ENV_PRODUCTION_CACERT} | base64 -d > ./ca.crt
+            kubectl config set-cluster ${KUBE_ENV_CLUSTER_NAME} --certificate-authority=./ca.crt --server=https://api.${KUBE_ENV_CLUSTER_NAME}
+            kubectl config set-credentials circleci --token=${KUBE_ENV_PRODUCTION_TOKEN
+            kubectl config use-context ${KUBE_ENV_CLUSTER_NAME}
             kubectl config set-context ${KUBE_ENV_CLUSTER_NAME} --cluster=${KUBE_ENV_CLUSTER_NAME} --user=circleci --namespace=${KUBE_ENV_STAGING_NAMESPACE}
             kubectl get pods
             helm init --tiller-namespace ${KUBE_ENV_STAGING_NAMESPACE} --client-only
