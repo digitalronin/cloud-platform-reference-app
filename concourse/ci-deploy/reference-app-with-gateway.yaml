@@ -1,0 +1,140 @@
+---
+groups:
+- name: build and push image
+  jobs:
+  - Build-and-push-to-ECR
+#   - deploy-app
+# - name: deploy
+#   jobs:
+#   - jason
+
+resources:
+- name: cloud-platform-reference-app-repo
+  type: git
+  source:
+    branch: feature/multi-pipeline
+    uri: https://github.com/ministryofjustice/cloud-platform-reference-app.git
+
+- name: application-image
+  type: docker-image
+  source:
+    repository: 926803513772.dkr.ecr.eu-west-1.amazonaws.com/cloud-platform/cloud-platform-reference-app
+    tag: latest
+    aws_access_key_id: ((aws.access-key-id))
+    aws_secret_access_key: ((aws.secret-access-key))
+
+- name: tools-image
+  type: docker-image
+  source:
+    repository: 926803513772.dkr.ecr.eu-west-1.amazonaws.com/cloud-platform/tools
+    tag: latest
+    aws_access_key_id: ((aws.access-key-id))
+    aws_secret_access_key: ((aws.secret-access-key))
+
+jobs:
+- name: Build-and-push-to-ECR
+  plan:
+    - aggregate:
+      - get: cloud-platform-reference-app-repo
+        trigger: true
+      - get: tools-image
+    - task: ensure-repository-exists
+      image: tools-image
+      config:
+        platform: linux
+        run:
+          file: cloud-platform-reference-app-repo/ci-deploy/tasks/ensure-repository-exists.sh
+          args: []
+        params:
+          AWS_DEFAULT_REGION: eu-west-1
+          AWS_ACCESS_KEY_ID: ((aws.access-key-id))
+          AWS_SECRET_ACCESS_KEY: ((aws.secret-access-key))
+    - task: prepare-image-tags
+      image: tools-image
+      config:
+        platform: linux
+        inputs:
+          - name: cloud-platform-reference-app-repo
+        outputs:
+          - name: build-repo
+        run:
+          path: /bin/bash
+          args:
+            - -c
+            - |
+              git clone cloud-platform-reference-app-repo build-repo
+              # https://github.com/concourse/git-resource#additional-files-populated
+              echo "$(cat cloud-platform-reference-app-repo/.git/ref)" > build-repo/.git/ref
+    - put: application-image
+      params:
+        build: build-repo
+        dockerfile: build-repo/Dockerfile
+        additional_tags: build-repo/.git/ref
+        tag_as_latest: false
+        get_params:
+          skip_download: true
+
+- name: Helm-deployment
+  plan:
+    - aggregate:
+      - get: tools-image
+        passed: Build-and-push-to-ECR
+    - task: deploy-to-dev
+      image: tools-image
+      config:
+        platform: linux
+        params:
+          AWS_ACCESS_KEY_ID: ((aws.access-key-id))
+          AWS_SECRET_ACCESS_KEY: ((aws.secret-access-key))
+          KUBECONFIG: /tmp/kubeconfig
+        run:
+          path: /bin/sh
+          dir: cloud-platform-environments-repo
+          args:
+            - -c
+            - |
+              aws s3 cp s3://cloud-platform-concourse-build-environments/kubeconfig /tmp/kubeconfig
+              kubectl config use-context cloud-platform-live-0.k8s.integration.dsd.io
+
+
+
+
+# - name: Manually-trigger-me
+#   plan:
+#   - get: my-resource
+#     passed:
+#       - Run-automatically
+#     trigger: false
+#   - task: do-your-manual-task-here
+#     config:
+#       platform: linux
+#       image_resource:
+#         type: docker-image
+#         source:
+#           repository: ubuntu
+#       run:
+#         path: sh
+#         args:
+#         - -exc
+#         - |
+#           echo "Output of your manually triggered task."
+
+# - name: Do-more-stuff-after-manual-trigger
+#   plan:
+#   - get: my-resource
+#     passed:
+#       - Manually-trigger-me
+#     trigger: true
+#   - task: do-other-tasks-here
+#     config:
+#       platform: linux
+#       image_resource:
+#         type: docker-image
+#         source:
+#           repository: ubuntu
+#       run:
+#         path: sh
+#         args:
+#         - -exc
+#         - |
+#           echo "Output of your other tasks."
