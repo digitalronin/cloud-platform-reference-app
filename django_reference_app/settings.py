@@ -26,10 +26,8 @@ SECRET_KEY = os.environ.get('SECRET_KEY',
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
-    
-    
-    #os.environ.get('SERVER_IP', '127.0.0.1'),
-    #os.environ.get('SERVER_NAME', 'localhost'),
+# os.environ.get('SERVER_IP', '127.0.0.1'),
+# #os.environ.get('SERVER_NAME', 'localhost'),
 
 
 # Application definition
